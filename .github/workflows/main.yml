@@ -1,0 +1,39 @@
+name: Monitor SIPROS
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Roda a cada 30 minutos
+  workflow_dispatch: # Cria um botão para rodar manualmente
+
+jobs:
+  rodar-monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Necessário para o bot atualizar o JSON
+
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar o Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Executar o Monitor
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+        run: python main.py
+
+      - name: Salvar processos enviados (JSON)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Atualiza memória do bot (processos_enviados.json)"
+          file_pattern: 'processos_enviados.json'
