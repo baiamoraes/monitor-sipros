@@ -189,7 +189,8 @@ def consultar(page, detalhe):
 
     page.goto(
         BASE + "/selecoes/disponiveis",
-        wait_until="networkidle"
+        wait_until="domcontentloaded",
+        timeout=60000
     )
 
     cards = page.locator(
@@ -306,7 +307,8 @@ def consultar(page, detalhe):
 
         detalhe.goto(
             url,
-            wait_until="networkidle"
+            wait_until="domcontentloaded",
+            timeout=60000
         )
 
         cargos = obter_cargos(
