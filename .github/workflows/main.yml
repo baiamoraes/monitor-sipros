@@ -2,14 +2,14 @@ name: Monitor SIPROS
 
 on:
   schedule:
-    - cron: '*/30 * * * *' # Roda a cada 30 minutos
-  workflow_dispatch: # Cria um botão para rodar manualmente
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
   rodar-monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Necessário para o bot atualizar o JSON
+      contents: write
 
     steps:
       - name: Baixar o repositório
@@ -24,20 +24,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium
-
-      - name: Testar outros sites
-        run: |
-          curl -I https://www.google.com
-          echo "--------------------"
-          curl -I https://www.gov.br
-          echo "--------------------"
-          curl -I https://www.sipros.pa.gov.br --max-time 30
-
-      - name: Testar acesso ao SIPROS
-        run: |
-          echo "Testando conectividade..."
-          curl -I -L --max-time 30 https://www.sipros.pa.gov.br/selecoes/disponiveis
 
       - name: Executar o Monitor
         env:
