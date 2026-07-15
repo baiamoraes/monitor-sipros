@@ -2,7 +2,8 @@ name: Monitor SIPROS
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    # Roda a cada 5 min (*/5), das 11h às 21h UTC (08h-18h BRT), Seg a Sex (1-5)
+    - cron: '*/5 11-21 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -29,6 +30,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: python main.py
 
       - name: Salvar processos enviados (JSON)
