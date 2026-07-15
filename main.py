@@ -1,404 +1,169 @@
-from playwright.sync_api import sync_playwright
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 import re
-import time
-import random
 import json
 import os
-import requests
-
 from dotenv import load_dotenv
 
 # ==========================================================
 # CONFIGURAÇÕES
 # ==========================================================
-
 load_dotenv()
 
 BASE = "https://www.sipros.pa.gov.br"
-
-# manter assim durante os testes
-DATA_ALVO = datetime.strptime(
-    "26/06/2026",
-    "%d/%m/%Y"
-)
-
-TELEGRAM_TOKEN = os.getenv(
-    "TELEGRAM_TOKEN"
-)
-
-TELEGRAM_USER_ID = os.getenv(
-    "TELEGRAM_USER_ID"
-)
-
+DATA_ALVO = datetime.strptime("26/06/2026", "%d/%m/%Y")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")
 ARQUIVO_ENVIADOS = "processos_enviados.json"
 
 MESES = {
-    "Janeiro": 1,
-    "Fevereiro": 2,
-    "Março": 3,
-    "Abril": 4,
-    "Maio": 5,
-    "Junho": 6,
-    "Julho": 7,
-    "Agosto": 8,
-    "Setembro": 9,
-    "Outubro": 10,
-    "Novembro": 11,
-    "Dezembro": 12
+    "Janeiro": 1, "Fevereiro": 2, "Março": 3, "Abril": 4, "Maio": 5, "Junho": 6,
+    "Julho": 7, "Agosto": 8, "Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12
 }
 
 # ==========================================================
-# CONTROLE DE PROCESSOS ENVIADOS
+# UTILIDADES
 # ==========================================================
-
 def carregar_enviados():
-    if not os.path.exists(
-        ARQUIVO_ENVIADOS
-    ):
-        return []
-
-    with open(
-        ARQUIVO_ENVIADOS,
-        "r",
-        encoding="utf-8"
-    ) as arquivo:
-        return json.load(
-            arquivo
-        )
+    if os.path.exists(ARQUIVO_ENVIADOS):
+        with open(ARQUIVO_ENVIADOS, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
 def salvar_enviados(lista):
-    with open(
-        ARQUIVO_ENVIADOS,
-        "w",
-        encoding="utf-8"
-    ) as arquivo:
-        json.dump(
-            lista,
-            arquivo,
-            indent=4,
-            ensure_ascii=False
-        )
-
-# ==========================================================
-# TELEGRAM
-# ==========================================================
+    with open(ARQUIVO_ENVIADOS, "w", encoding="utf-8") as f:
+        json.dump(lista, f, indent=4, ensure_ascii=False)
 
 def enviar_telegram(texto):
     if not TELEGRAM_TOKEN:
-        print(
-            "Telegram não configurado."
-        )
+        print("Telegram não configurado.")
         return
-
-    url = (
-        f"https://api.telegram.org/"
-        f"bot{TELEGRAM_TOKEN}/sendMessage"
-    )
-
-    dados = {
-        "chat_id": TELEGRAM_USER_ID,
-        "text": texto,
-        "disable_web_page_preview": True
-    }
-
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    dados = {"chat_id": TELEGRAM_USER_ID, "text": texto, "disable_web_page_preview": True, "parse_mode": "Markdown"}
     try:
-        resposta = requests.post(
-            url,
-            data=dados,
-            timeout=20
-        )
-
-        if resposta.status_code == 200:
-            print(
-                "✓ Telegram enviado"
-            )
-        else:
-            print(
-                "Erro Telegram:",
-                resposta.text
-            )
-
-    except Exception as erro:
-        print(
-            "Falha Telegram:",
-            erro
-        )
-
-# ==========================================================
-# DATAS
-# ==========================================================
+        requests.post(url, data=dados, timeout=10)
+    except Exception as e:
+        print("Erro no Telegram:", e)
 
 def obter_periodo(texto):
-    texto = texto.replace(
-        "Inscrições:",
-        ""
-    ).strip()
-
-    resultado = re.search(
-        r'(\d+)\s*a\s*(\d+)\s*de\s*'
-        r'([A-Za-zÇçãÃéÉ]+)\s*de\s*(\d+)',
-        texto
-    )
-
+    texto = texto.replace("Inscrições:", "").strip()
+    resultado = re.search(r'(\d+)\s*a\s*(\d+)\s*de\s*([A-Za-zÇçãÃéÉ]+)\s*de\s*(\d+)', texto)
+    
     if not resultado:
         return None, None
-
-    inicio = datetime(
-        int(resultado.group(4)),
-        MESES[resultado.group(3)],
-        int(resultado.group(1))
-    )
-
-    fim = datetime(
-        int(resultado.group(4)),
-        MESES[resultado.group(3)],
-        int(resultado.group(2))
-    )
-
+        
+    ano = int(resultado.group(4))
+    mes = MESES.get(resultado.group(3))
+    
+    if not mes:
+        return None, None
+        
+    inicio = datetime(ano, mes, int(resultado.group(1)))
+    fim = datetime(ano, mes, int(resultado.group(2)))
     return inicio, fim
 
 # ==========================================================
-# CARGOS
+# NÚCLEO DO MONITOR
 # ==========================================================
-
-def obter_cargos(page):
-    try:
-        dados = page.locator(
-            "#ver_lista_cargo"
-        ).get_attribute(
-            "data-bind"
-        )
-
-        if dados:
-            return [
-                cargo.strip()
-                for cargo in dados.split("|")
-            ]
-    except:
-        pass
-
-    return []
-
-# ==========================================================
-# CONSULTA
-# ==========================================================
-
-def consultar(page, detalhe):
+def main():
+    print("Iniciando varredura ultra-rápida (requests + bs4)...")
     enviados = carregar_enviados()
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
-    page.goto(
-        BASE + "/selecoes/disponiveis",
-        wait_until="domcontentloaded",
-        timeout=60000
-    )
+    # 1. Puxa a página inicial
+    try:
+        resposta = requests.get(BASE + "/selecoes/disponiveis", headers=headers, timeout=15)
+        resposta.raise_for_status()
+    except Exception as erro:
+        print("Erro ao acessar o SIPROS:", erro)
+        return
 
-    cards = page.locator(
-        "div.col-sm-4.plan"
-    )
-
-    total = cards.count()
-
-    print()
-    print("=" * 60)
-    print(
-        "Consulta SIPROS"
-    )
-    print(
-        "Data alvo:",
-        DATA_ALVO.strftime("%d/%m/%Y")
-    )
-    print(
-        "Processos:",
-        total
-    )
-    print("=" * 60)
-
+    soup = BeautifulSoup(resposta.text, 'html.parser')
+    cards = soup.select("div.col-sm-4.plan")
+    
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {len(cards)} processos carregados no HTML.")
     encontrados = 0
 
-    for i in range(total):
-        card = cards.nth(i)
-
-        bloco = card.locator(
-            "li[id^='processo_seletivo_']"
-        )
-
-        if bloco.count() == 0:
+    for card in cards:
+        bloco = card.find('li', id=re.compile(r'^processo_seletivo_'))
+        if not bloco:
             continue
 
-        orgao = bloco.locator(
-            "h1"
-        ).inner_text().strip()
+        orgao = bloco.find('h1').text.strip() if bloco.find('h1') else "Sem Órgão"
+        titulo = bloco.find('span').text.strip() if bloco.find('span') else "Sem Título"
 
-        titulo = bloco.locator(
-            "span"
-        ).inner_text().strip()
+        itens = card.find_all('li')
+        inscricoes = salario = vagas = ""
+        
+        for item in itens:
+            texto = item.text.strip()
+            if texto.startswith("Inscrições"): inscricoes = texto
+            elif texto.startswith("Vencimento"): salario = texto
+            elif texto.startswith("Vagas"): vagas = texto
 
-        itens = card.locator(
-            "li"
-        )
-
-        inscricoes = ""
-        salario = ""
-        vagas = ""
-
-        for x in range(
-            itens.count()
-        ):
-            texto = itens.nth(x).inner_text().strip()
-
-            if texto.startswith(
-                "Inscrições"
-            ):
-                inscricoes = texto
-
-            elif texto.startswith(
-                "Vencimento"
-            ):
-                salario = texto
-
-            elif texto.startswith(
-                "Vagas"
-            ):
-                vagas = texto
-
-        inicio, fim = obter_periodo(
-            inscricoes
-        )
-
+        inicio, fim = obter_periodo(inscricoes)
+        
         if not inicio:
             continue
 
-        print(
-            f"{i+1}/{total}",
-            orgao,
-            end=" -> "
-        )
+        print(f"Analisando: {orgao}", end=" -> ")
 
         if fim < DATA_ALVO:
-            print(
-                "fim do período"
-            )
+            print("Fim do período atingido (Mais antigos). Interrompendo busca.")
             break
 
         if inicio > DATA_ALVO:
-            print(
-                "mais recente"
-            )
+            print("Mais recente. Pulando.")
             continue
 
-        link = card.locator(
-            "a:has-text('Ler mais')"
-        ).get_attribute(
-            "href"
-        )
+        link_tag = card.find('a', string=re.compile(r'Ler mais'))
+        if not link_tag:
+            continue
+            
+        url_detalhe = BASE + link_tag['href']
 
-        url = BASE + link
-
-        if url in enviados:
-            print(
-                "já enviado"
-            )
+        if url_detalhe in enviados:
+            print("Já está na memória.")
             continue
 
-        print(
-            "NOVO!"
-        )
+        print("NOVO! Acessando detalhes...")
 
-        detalhe.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=60000
-        )
+        # 2. Puxa a página de detalhes para pegar o data-bind
+        cargos = []
+        try:
+            resp_detal = requests.get(url_detalhe, headers=headers, timeout=15)
+            soup_detal = BeautifulSoup(resp_detal.text, 'html.parser')
+            
+            tag_cargo = soup_detal.find(id="ver_lista_cargo")
+            if tag_cargo and tag_cargo.has_attr('data-bind'):
+                dados_bind = tag_cargo['data-bind']
+                cargos = [c.strip() for c in dados_bind.split("|")]
+        except Exception as e:
+            print(f"Erro ao raspar cargos de {orgao}: {e}")
 
-        cargos = obter_cargos(
-            detalhe
-        )
+        # 3. Monta e envia a mensagem formatada para o Telegram
+        mensagem = f"🚨 *NOVO PROCESSO SIPROS*\n\n"
+        mensagem += f"🏢 *Órgão:*\n{orgao}\n\n"
+        mensagem += f"📌 *Processo:*\n{titulo}\n\n"
+        mensagem += f"📅 *{inscricoes}*\n"
+        mensagem += f"💰 *{salario}*\n"
+        mensagem += f"📌 *{vagas}*\n\n"
+        
+        if cargos:
+            mensagem += "🎯 *Cargos:*\n"
+            for c in cargos:
+                mensagem += f"• {c}\n"
+                
+        mensagem += f"\n🔗 [Clique aqui para ler o Edital]({url_detalhe})"
 
-        mensagem = f"""
-🚨 NOVO PROCESSO SIPROS
-
-🏢 Órgão:
-{orgao}
-
-📌 Processo:
-{titulo}
-
-📅 Inscrições:
-{inscricoes}
-
-💰 Salário:
-{salario}
-
-📌 {vagas}
-
-🎯 Cargos:
-"""
-
-        for cargo in cargos:
-            mensagem += (
-                f"\n• {cargo}"
-            )
-
-        mensagem += (
-            f"\n\n🔗 {url}"
-        )
-
-        print(
-            mensagem
-        )
-
-        enviar_telegram(
-            mensagem
-        )
-
-        enviados.append(
-            url
-        )
-
-        salvar_enviados(
-            enviados
-        )
-
+        enviar_telegram(mensagem)
+        enviados.append(url_detalhe)
+        salvar_enviados(enviados)
         encontrados += 1
 
-    print()
-    print("=" * 60)
-
-    print(
-        "Novos encontrados:",
-        encontrados
-    )
-
-    print("=" * 60)
-
-# ==========================================================
-# PROGRAMA
-# ==========================================================
-
-def main():
-    print("Iniciando varredura automatizada na nuvem...")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True # <- Alterado para o servidor poder rodar sem erro
-        )
-
-        contexto = browser.new_context(
-            locale="pt-BR",
-            timezone_id="America/Belem"
-        )
-
-        page = contexto.new_page()
-        detalhe = contexto.new_page()
-
-        # Roda a consulta apenas uma vez e se desliga. O GitHub chama isso a cada 30 minutos.
-        consultar(
-            page,
-            detalhe
-        )
-
-        browser.close()
-        print("Varredura concluída. Desligando servidor.")
+    print("=" * 50)
+    print(f"Consulta finalizada com sucesso! Novos processos: {encontrados}")
 
 if __name__ == "__main__":
     main()
