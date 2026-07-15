@@ -26,6 +26,14 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
+      - name: Testar outros sites
+        run: |
+          curl -I https://www.google.com
+          echo "--------------------"
+          curl -I https://www.gov.br
+          echo "--------------------"
+          curl -I https://www.sipros.pa.gov.br --max-time 30
+
       - name: Testar acesso ao SIPROS
         run: |
           echo "Testando conectividade..."
