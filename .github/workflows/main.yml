@@ -26,6 +26,11 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
+      - name: Testar acesso ao SIPROS
+        run: |
+          echo "Testando conectividade..."
+          curl -I -L --max-time 30 https://www.sipros.pa.gov.br/selecoes/disponiveis
+
       - name: Executar o Monitor
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
