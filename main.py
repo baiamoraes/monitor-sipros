@@ -15,7 +15,10 @@ import urllib.parse
 load_dotenv()
 
 BASE = "https://www.sipros.pa.gov.br"
-DATA_ALVO = datetime.strptime("26/06/2026", "%d/%m/%Y")
+
+# Define a data atual exata (zerando as horas para não dar conflito na comparação)
+DATA_ALVO = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY")
@@ -73,7 +76,6 @@ def buscar_com_proxy(url_alvo):
     e burlar bloqueios de firewall governamental.
     """
     if not SCRAPER_API_KEY:
-        # Se estiver sem chave, tenta o acesso direto (para testes locais)
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         return requests.get(url_alvo, headers=headers, timeout=30)
     
@@ -89,15 +91,12 @@ def buscar_com_proxy(url_alvo):
 # NÚCLEO DO MONITOR
 # ==========================================================
 def main():
-    # Pausa aleatória entre 0 e 120 segundos. 
-    # Somado aos 5 minutos do cron, gera um intervalo variável de 3 a 7 min.
     espera = random.randint(0, 120)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Iniciando máquina. Aguardando {espera}s para simular comportamento humano...")
     time.sleep(espera)
     
     enviados = carregar_enviados()
 
-    # 1. Puxa a página inicial usando o Proxy
     try:
         print("Acessando a página principal do SIPROS...")
         resposta = buscar_com_proxy(BASE + "/selecoes/disponiveis")
@@ -110,6 +109,7 @@ def main():
     cards = soup.select("div.col-sm-4.plan")
     
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {len(cards)} processos carregados no HTML.")
+    print(f"Buscando processos ativos para a data: {DATA_ALVO.strftime('%d/%m/%Y')}")
     encontrados = 0
 
     for card in cards:
@@ -156,7 +156,6 @@ def main():
 
         print("NOVO! Acessando detalhes...")
 
-        # 2. Puxa a página de detalhes usando o Proxy
         cargos = []
         try:
             resp_detal = buscar_com_proxy(url_detalhe)
@@ -169,7 +168,6 @@ def main():
         except Exception as e:
             print(f"Erro ao raspar cargos de {orgao}: {e}")
 
-        # 3. Monta e envia a mensagem formatada para o Telegram
         mensagem = f"🚨 *NOVO PROCESSO SIPROS*\n\n"
         mensagem += f"🏢 *Órgão:*\n{orgao}\n\n"
         mensagem += f"📌 *Processo:*\n{titulo}\n\n"
